@@ -1,33 +1,55 @@
- 
+### **Sprite Walls Engine**  
 
+**Sprite Walls Engine** is a MakeCode Arcade extension that provides improved sprite collisions using hitboxes instead of relying on default sprite bounds. This prevents sprites from passing through walls and enables accurate collision detection.  
 
-> Open this page at [https://sonicblaston62.github.io/sprite-walls/](https://sonicblaston62.github.io/sprite-walls/)
+---
 
-## Use as Extension
+### **Important Notes**  
+- Sprites must be at least **4x4 pixels** wide for collisions to work correctly.  
+- Collision is handled using **custom hitboxes**, independent of the sprite's built-in bounding box.  
 
-This repository can be added as an **extension** in MakeCode.
+---
 
-* open [https://arcade.makecode.com/](https://arcade.makecode.com/)
-* click on **New Project**
-* click on **Extensions** under the gearwheel menu
-* search for **https://github.com/sonicblaston62/sprite-walls** and import
+### **Installation**  
+1. Open [MakeCode Arcade](https://arcade.makecode.com/) and create a new project.  
+2. Click **"Extensions" → "Advanced → Extensions"**.  
+3. Paste this link in the search bar and press Enter:  
+```
+https://github.com/Sonicblaston62/Sprite-Walls-Engine
+```
+4. Select the extension and click **"Add"**.  
 
-## Edit this project ![Build status badge](https://github.com/sonicblaston62/sprite-walls/workflows/MakeCode/badge.svg)
+---
 
-To edit this repository in MakeCode.
+### **Usage**  
+#### **Solid Collisions**  
+Stops a sprite when it collides with a specified object or wall.  
+```typescript
+CollisionHandler.handleSolidCollision(mySprite, SpriteKind.Wall);
+```
+#### **Pushable Objects**  
+Allows a sprite to push another object when colliding.  
+```typescript
+CollisionHandler.handlePushableCollision(mySprite, SpriteKind.Box);
+```
 
-* open [https://arcade.makecode.com/](https://arcade.makecode.com/)
-* click on **Import** then click on **Import URL**
-* paste **https://github.com/sonicblaston62/sprite-walls** and click import
+---
 
-## Blocks preview
+### **Features**  
+- Accurate **hitbox-based** collision detection.  
+- Prevents sprites from **phasing through walls**.  
+- Supports **pushable objects**.  
+- Works for **any sprite size (minimum 4x4 pixels)**.  
 
-This image shows the blocks code from the last commit in master.
-This image may take a few minutes to refresh.
+---
 
-![A rendered view of the blocks](https://github.com/sonicblaston62/sprite-walls/raw/master/.github/makecode/blocks.png)
+### **Limitations**  
+- Sprites smaller than **4x4 pixels** may cause inaccurate collisions.  
+- Does not currently support **moving platforms or slopes**.  
 
-#### Metadata (used for search, rendering)
+---
 
-* for PXT/arcade
-<script src="https://makecode.com/gh-pages-embed.js"></script><script>makeCodeRender("{{ site.makecode.home_url }}", "{{ site.github.owner_name }}/{{ site.github.repository_name }}");</script>
+### **License & Contributions**  
+Released under the **MIT License**, allowing free use and modification. Contributions are welcome—fork the repository, make changes in `custom.ts`, and submit a pull request.  
+
+For issues or feedback, visit the [GitHub Issues](https://github.com/Sonicblaston62/Sprite-Walls-Engine/issues) page.
