@@ -1,3 +1,4 @@
+//% color="#a349a4" weight=90
 namespace CollisionHandler {
 
     /**
