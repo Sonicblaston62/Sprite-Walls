@@ -1,4 +1,4 @@
-namespace SpriteCollisions {
+namespace CollisionHandler {
 
     /**
      * Stops spriteA when colliding with spriteB (acts like a wall).
@@ -6,17 +6,14 @@ namespace SpriteCollisions {
      * @param spriteB The second sprite or a SpriteKind (stationary object).
      */
     //% block="stop $spriteA when colliding with $spriteB"
-    //% blockId=spriteCollisions_handleSolidCollision
     //% group="Solid Collisions"
     //% spriteA.shadow=variables_get
     //% spriteA.defl=mySprite
     //% spriteB.shadow=variables_get
     //% spriteB.shadow=spritekind
-    //% color="#a349a4" weight=90
     export function handleSolidCollision(spriteA: Sprite | number, spriteB: Sprite | number) {
         handleAABBCollision(spriteA, spriteB, false);
     }
-
 
     /**
      * Allows spriteA to push spriteB (pushable object).
