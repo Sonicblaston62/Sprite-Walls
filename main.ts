@@ -1,4 +1,3 @@
-//% color="#a349a4" weight=90
 namespace CollisionHandler {
 
     export enum PushDirection {
@@ -78,12 +77,12 @@ namespace CollisionHandler {
                             }
 
                         } else {
-                            let newX = clamp(a.x - moveX, spriteMinX(a), spriteMaxX(a));
-                            let newY = clamp(a.y - moveY, spriteMinY(a), spriteMaxY(a));
+                            let newX2 = clamp(a.x - moveX, spriteMinX(a), spriteMaxX(a));
+                            let newY2 = clamp(a.y - moveY, spriteMinY(a), spriteMaxY(a));
 
                             // Prevent player from moving past tilemap boundaries
-                            if (!isOutOfBounds(newX, newY, a)) {
-                                a.setPosition(newX, newY);
+                            if (!isOutOfBounds(newX2, newY2, a)) {
+                                a.setPosition(newX2, newY2);
                             }
                             a.vx = 0;
                             a.vy = 0;
@@ -109,8 +108,8 @@ namespace CollisionHandler {
 
     // Checks if a position is outside the tilemap boundaries
     function isOutOfBounds(x: number, y: number, sprite: Sprite): boolean {
-        let tilemap = game.currentScene().tileMap;
-        if (!tilemap) return false;
+        let tilemap2 = game.currentScene().tileMap;
+        if (!tilemap2) return false;
 
         let minX = spriteMinX(sprite);
         let minY = spriteMinY(sprite);
@@ -153,8 +152,8 @@ namespace CollisionHandler {
 
     // Gets the maximum X position allowed for a sprite within the tilemap
     function spriteMaxX(sprite: Sprite): number {
-        let tilemap = game.currentScene().tileMap;
-        return tilemap ? tilemap.areaWidth() - sprite.width / 2 : scene.screenWidth();
+        let tilemap3 = game.currentScene().tileMap;
+        return tilemap3 ? tilemap3.areaWidth() - sprite.width / 2 : scene.screenWidth();
     }
 
     // Gets the minimum Y position allowed for a sprite
@@ -164,7 +163,7 @@ namespace CollisionHandler {
 
     // Gets the maximum Y position allowed for a sprite within the tilemap
     function spriteMaxY(sprite: Sprite): number {
-        let tilemap = game.currentScene().tileMap;
-        return tilemap ? tilemap.areaHeight() - sprite.height / 2 : scene.screenHeight();
+        let tilemap4 = game.currentScene().tileMap;
+        return tilemap4 ? tilemap4.areaHeight() - sprite.height / 2 : scene.screenHeight();
     }
 }
