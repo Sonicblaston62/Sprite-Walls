@@ -1,11 +1,13 @@
 //% color="#a349a4" weight=90
 namespace CollisionHandler {
 
-    /**
-     * Stops spriteA when colliding with spriteB (acts like a wall).
-     * @param spriteA The first sprite (the one that moves).
-     * @param spriteB The second sprite or a SpriteKind (stationary object).
-     */
+    export enum PushDirection {
+        X_Axis,
+        Y_Axis,
+        Omnidirectional
+    }
+
+    // Stops spriteA when colliding with spriteB (acts like a wall)
     //% block="stop $spriteA when colliding with $spriteB"
     //% group="Solid Collisions"
     //% spriteA.shadow=variables_get
@@ -13,106 +15,122 @@ namespace CollisionHandler {
     //% spriteB.shadow=variables_get
     //% spriteB.shadow=spritekind
     export function handleSolidCollision(spriteA: Sprite | number, spriteB: Sprite | number) {
-        handleAABBCollision(spriteA, spriteB, false);
+        handleAABBCollision(spriteA, spriteB, false, PushDirection.Omnidirectional);
     }
 
-    /**
-     * Allows spriteA to push spriteB (pushable object).
-     * @param spriteA The first sprite (the one that moves).
-     * @param spriteB The second sprite or a SpriteKind (pushable object).
-     */
-    //% block="allow $spriteA to push $spriteB"
+    // Allows spriteA to push spriteB
+    //% block="allow $spriteA to push $spriteB in $direction"
     //% group="Pushable Collisions"
     //% spriteA.shadow=variables_get
     //% spriteA.defl=mySprite
     //% spriteB.shadow=variables_get
     //% spriteB.shadow=spritekind
+    //% direction.defl=CollisionHandler.PushDirection.Omnidirectional
     //% color="#a349a4" weight=80
-    export function handlePushableCollision(spriteA: Sprite | number, spriteB: Sprite | number) {
-        handleAABBCollision(spriteA, spriteB, true);
+    export function handlePushableCollision(spriteA: Sprite | number, spriteB: Sprite | number, direction: PushDirection) {
+        handleAABBCollision(spriteA, spriteB, true, direction);
     }
 
-    // =========================
-    // AABB Collision Handling
-    // =========================
-function handleAABBCollision(spriteA: Sprite | number, spriteB: Sprite | number, pushable: boolean = false) {
-    game.onUpdate(function () {
-        let spritesA: Sprite[] = [];
-        let spritesB: Sprite[] = [];
+    function handleAABBCollision(spriteA: Sprite | number, spriteB: Sprite | number, pushable: boolean, direction: PushDirection) {
+        game.onUpdate(function () {
+            let spritesA: Sprite[] = typeof spriteA === "number" ? sprites.allOfKind(spriteA) : [spriteA];
+            let spritesB: Sprite[] = typeof spriteB === "number" ? sprites.allOfKind(spriteB) : [spriteB];
 
-        // If spriteA is a number, get all sprites of that kind
-        if (typeof spriteA === "number") {
-            spritesA = sprites.allOfKind(spriteA);
-        } else {
-            spritesA = [spriteA];
-        }
+            for (let a of spritesA) {
+                for (let b of spritesB) {
+                    if (a === b) continue;
 
-        // If spriteB is a number, get all sprites of that kind
-        if (typeof spriteB === "number") {
-            spritesB = sprites.allOfKind(spriteB);
-        } else {
-            spritesB = [spriteB];
-        }
+                    let boxA = getBoundingBox(a);
+                    let boxB = getBoundingBox(b);
 
-        // Check collisions between all sprites in both groups
-        for (let a of spritesA) {
-            for (let b of spritesB) {
-                if (a === b) continue; // **🛠 Fix: Ignore self-collision**
+                    if (isAABBOverlapping(boxA, boxB)) {
+                        let overlapX = Math.min(boxA.right - boxB.left, boxB.right - boxA.left);
+                        let overlapY = Math.min(boxA.bottom - boxB.top, boxB.bottom - boxA.top);
 
-                let boxA = getBoundingBox(a, false);
-                let boxB = getBoundingBox(b, false);
+                        let moveX = 0;
+                        let moveY = 0;
 
-                if (isAABBOverlapping(boxA, boxB)) {
-                    let overlapX = Math.min(boxA.right - boxB.left, boxB.right - boxA.left);
-                    let overlapY = Math.min(boxA.bottom - boxB.top, boxB.bottom - boxA.top);
-
-                    if (overlapX < overlapY) {
-                        if (a.x > b.x) {
-                            if (pushable) b.x -= overlapX;
-                            else a.x += overlapX;
+                        // Determine movement direction based on the smaller overlap
+                        if (overlapX < overlapY) {
+                            moveX = a.x > b.x ? -overlapX : overlapX;
                         } else {
-                            if (pushable) b.x += overlapX;
-                            else a.x -= overlapX;
+                            moveY = a.y > b.y ? -overlapY : overlapY;
                         }
-                    } else {
-                        if (a.y > b.y) {
-                            if (pushable) b.y -= overlapY;
-                            else a.y += overlapY;
+
+                        if (pushable) {
+                            // Restrict movement based on push direction
+                            if (direction === PushDirection.X_Axis) {
+                                moveY = 0;
+                            } else if (direction === PushDirection.Y_Axis) {
+                                moveX = 0;
+                            }
+
+                            let newX = b.x + moveX;
+                            let newY = b.y + moveY;
+
+                            // Check if the pushable object will hit a wall or move out of bounds
+                            if (isOnWallTile(newX, newY) || isOutOfBounds(newX, newY, b)) {
+                                handleSolidCollision(a, b);
+                                a.vx = 0; // Stop player movement
+                                a.vy = 0;
+                            } else {
+                                b.setPosition(newX, newY);
+                            }
+
                         } else {
-                            if (pushable) b.y += overlapY;
-                            else a.y -= overlapY;
+                            let newX = clamp(a.x - moveX, spriteMinX(a), spriteMaxX(a));
+                            let newY = clamp(a.y - moveY, spriteMinY(a), spriteMaxY(a));
+
+                            // Prevent player from moving past tilemap boundaries
+                            if (!isOutOfBounds(newX, newY, a)) {
+                                a.setPosition(newX, newY);
+                            }
+                            a.vx = 0;
+                            a.vy = 0;
                         }
                     }
-
-                    if (!pushable) {
-                        a.vx = 0;
-                        a.vy = 0;
-                    }
-                    break;
                 }
             }
-        }
-    });
-}
+        });
+    }
 
+    // Checks if a given position collides with a wall tile
+    function isOnWallTile(x: number, y: number): boolean {
+        let tilemap = game.currentScene().tileMap;
+        if (!tilemap) return false;
 
-    // =========================
-    // Generate Exact Bounding Box
-    // =========================
-    function getBoundingBox(sprite: Sprite, addPadding: boolean = false): { left: number, right: number, top: number, bottom: number } {
-        let padding = addPadding ? Math.max(sprite.width, sprite.height) * 0.1 : 0;
+        let tempSprite = sprites.create(img`.`); // Create a temporary sprite for collision check
+        tempSprite.setPosition(x, y);
+        let onWall = tilemap.isOnWall(tempSprite);
+        tempSprite.destroy(); // Remove temporary sprite
 
+        return onWall;
+    }
+
+    // Checks if a position is outside the tilemap boundaries
+    function isOutOfBounds(x: number, y: number, sprite: Sprite): boolean {
+        let tilemap = game.currentScene().tileMap;
+        if (!tilemap) return false;
+
+        let minX = spriteMinX(sprite);
+        let minY = spriteMinY(sprite);
+        let maxX = spriteMaxX(sprite);
+        let maxY = spriteMaxY(sprite);
+
+        return x < minX || x > maxX || y < minY || y > maxY;
+    }
+
+    // Gets the bounding box of a sprite
+    function getBoundingBox(sprite: Sprite): { left: number, right: number, top: number, bottom: number } {
         return {
-            left: sprite.left - padding,
-            right: sprite.right + padding,
-            top: sprite.top - padding,
-            bottom: sprite.bottom + padding
+            left: sprite.left,
+            right: sprite.right,
+            top: sprite.top,
+            bottom: sprite.bottom
         };
     }
 
-    // =========================
-    // AABB Overlap Check
-    // =========================
+    // Checks if two bounding boxes overlap
     function isAABBOverlapping(boxA: { left: number, right: number, top: number, bottom: number },
         boxB: { left: number, right: number, top: number, bottom: number }): boolean {
         return (
@@ -121,5 +139,32 @@ function handleAABBCollision(spriteA: Sprite | number, spriteB: Sprite | number,
             boxA.top < boxB.bottom &&
             boxA.bottom > boxB.top
         );
+    }
+
+    // Restricts a value within a given range
+    function clamp(value: number, min: number, max: number): number {
+        return Math.max(min, Math.min(max, value));
+    }
+
+    // Gets the minimum X position allowed for a sprite
+    function spriteMinX(sprite: Sprite): number {
+        return sprite.width / 2;
+    }
+
+    // Gets the maximum X position allowed for a sprite within the tilemap
+    function spriteMaxX(sprite: Sprite): number {
+        let tilemap = game.currentScene().tileMap;
+        return tilemap ? tilemap.areaWidth() - sprite.width / 2 : scene.screenWidth();
+    }
+
+    // Gets the minimum Y position allowed for a sprite
+    function spriteMinY(sprite: Sprite): number {
+        return sprite.height / 2;
+    }
+
+    // Gets the maximum Y position allowed for a sprite within the tilemap
+    function spriteMaxY(sprite: Sprite): number {
+        let tilemap = game.currentScene().tileMap;
+        return tilemap ? tilemap.areaHeight() - sprite.height / 2 : scene.screenHeight();
     }
 }
