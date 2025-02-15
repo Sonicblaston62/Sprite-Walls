@@ -1,3 +1,4 @@
+//% color="#a349a4" weight=90//% color="#a349a4" weight=90 block="Collision Handler"
 namespace CollisionHandler {
 
     export enum PushDirection {
