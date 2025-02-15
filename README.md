@@ -25,13 +25,12 @@ https://github.com/Sonicblaston62/Sprite-Walls-Engine
 #### **Solid Collisions**  
 Stops a sprite when it collides with a specified object or wall.  
 ```typescript
-CollisionHandler.handleSolidCollision(mySprite, SpriteKind.Wall);
+CollisionHandler.handleSolidCollision(mySprite, SpriteKind.Player)
 ```
 #### **Pushable Objects**  
 Allows a sprite to push another object when colliding.  
 ```typescript
-CollisionHandler.handlePushableCollision(mySprite, SpriteKind.Box);
-```
+CollisionHandler.handlePushableCollision(mySprite, SpriteKind.Player, CollisionHandler.PushDirection.Omnidirectional)```
 
 ---
 
