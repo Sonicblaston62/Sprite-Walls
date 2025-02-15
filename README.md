@@ -30,7 +30,7 @@ CollisionHandler.handleSolidCollision(mySprite, SpriteKind.Player)
 #### **Pushable Objects**  
 Allows a sprite to push another object when colliding.  
 ```typescript
-CollisionHandler.handlePushableCollision(mySprite, SpriteKind.Player, CollisionHandler.PushDirection.Omnidirectional)```
+CollisionHandler.handlePushableCollision(mySprite, SpriteKind.Player, CollisionHandler.PushDirection.Omnidirectional)
 ```
 ---
 
