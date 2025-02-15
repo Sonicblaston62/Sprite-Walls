@@ -43,7 +43,7 @@ CollisionHandler.handlePushableCollision(mySprite, SpriteKind.Player, CollisionH
 ---
 
 ### **Limitations**  
-- Sprites smaller than **4x4 pixels** may cause inaccurate collisions.  
+- Sprites smaller than **4x4 pixels** WONT WORK.  
 - Does not currently support **moving platforms or slopes**.  
 
 ---
