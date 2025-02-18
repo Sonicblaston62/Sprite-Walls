@@ -1,6 +1,6 @@
 {
     "name": "Sprite Walls",
-    "description": "",
+    "description": "An extension that can make sprites act as walls",
     "dependencies": {
         "device": "*"
     },
