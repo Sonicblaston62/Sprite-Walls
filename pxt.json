@@ -9,7 +9,6 @@
         "main.ts",
         "README.md",
         "images.g.jres",
-        "images.g.ts"
     ],
     "testFiles": [
         "test.ts"
