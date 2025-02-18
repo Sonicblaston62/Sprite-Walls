@@ -1,16 +1,18 @@
 {
     "name": "Sprite Walls",
-    "description": "This extension can make sprites work as walls or make them pushable",
+    "description": "",
     "dependencies": {
         "device": "*"
     },
     "files": [
         "main.blocks",
         "main.ts",
-        "tilemap.g.jres",
-        "images.g.jres",
-        "images.g.ts",
         "README.md",
+        "assets.json",
+        "tilemap.g.jres",
+        "tilemap.g.ts",
+        "images.g.jres",
+        "images.g.ts"
     ],
     "testFiles": [
         "test.ts"
