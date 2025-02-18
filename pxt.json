@@ -8,10 +8,6 @@
         "main.blocks",
         "main.ts",
         "README.md",
-        "assets.json",
-        "tilemap.g.jres",
-        "images.g.jres",
-        "images.g.ts"
     ],
     "testFiles": [
         "test.ts"
