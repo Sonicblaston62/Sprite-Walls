@@ -9,6 +9,8 @@
         "README.md",
         "main.blocks",
         "images.g.ts",
+        "images.g.jres",
+        "tilemap.g.jres",
     ],
     "testFiles": [
         "test.ts"
