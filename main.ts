@@ -1,3 +1,4 @@
+    //% color="#a349a4" weight=80
 namespace CollisionHandler {
 
     export enum PushDirection {
