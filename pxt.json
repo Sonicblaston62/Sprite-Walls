@@ -5,12 +5,14 @@
         "device": "*"
     },
     "files": [
+        "main.blocks",
         "main.ts",
         "README.md",
-        "main.blocks",
-        "images.g.ts",
-        "images.g.jres",
+        "assets.json",
         "tilemap.g.jres",
+        "tilemap.g.ts",
+        "images.g.jres",
+        "images.g.ts"
     ],
     "testFiles": [
         "test.ts"
@@ -22,6 +24,6 @@
     "supportedTargets": [
         "arcade"
     ],
-    "preferredEditor": "tsprj",
+    "preferredEditor": "blocksprj",
     "icon": "fa fa-compress"
 }
