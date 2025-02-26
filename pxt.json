@@ -1,6 +1,6 @@
 {
     "name": "Sprite Walls",
-    "description": "An extension that can make sprites act as walls",
+    "description": "",
     "dependencies": {
         "device": "*"
     },
@@ -8,17 +8,22 @@
         "main.blocks",
         "main.ts",
         "README.md",
+        "assets.json",
+        "tilemap.g.jres",
+        "tilemap.g.ts",
+        "images.g.jres",
+        "images.g.ts"
     ],
     "testFiles": [
         "test.ts"
     ],
     "targetVersions": {
-        "target": "1.12.58",
+        "target": "1.12.59",
         "targetId": "arcade"
     },
     "supportedTargets": [
         "arcade"
     ],
-    "preferredEditor": "blocksprj",
+    "preferredEditor": "tsprj",
     "icon": "fa fa-compress"
 }
