@@ -1,28 +1,25 @@
 {
-    "name": "Sprite Walls",
-    "description": "",
+    "name": "sprite-walls",
+    "version": "0.9.0",
+    "description": "Solid and pushable sprite-to-sprite collisions",
     "dependencies": {
         "device": "*"
     },
     "files": [
-        "main.blocks",
         "main.ts",
-        "README.md",
-        "assets.json",
-        "tilemap.g.jres",
-        "tilemap.g.ts",
-        "images.g.ts"
+        "README.md"
     ],
     "testFiles": [
-        "test.ts"
+        "test.ts",
+        "main.blocks",
+        "tilemap.g.jres",
+        "tilemap.g.ts",
+        "images.g.jres",
+        "images.g.ts"
     ],
-    "targetVersions": {
-        "target": "1.12.59",
-        "targetId": "arcade"
-    },
     "supportedTargets": [
         "arcade"
     ],
-    "preferredEditor": "blocksprj",
+    "preferredEditor": "tsprj",
     "icon": "fa fa-compress"
 }
