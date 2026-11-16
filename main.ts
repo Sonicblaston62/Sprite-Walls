@@ -1,170 +1,449 @@
-    //% color="#a349a4" weight=80
+/**
+ * Sprite Walls: make sprites act like walls, or like boxes that can be pushed.
+ */
+//% color="#a349a4" weight=80 icon="" block="Sprite Walls"
 namespace CollisionHandler {
 
     export enum PushDirection {
+        //% block="left and right"
         X_Axis,
+        //% block="up and down"
         Y_Axis,
+        //% block="any direction"
         Omnidirectional
     }
 
-    // Stops spriteA when colliding with spriteB (acts like a wall)
+    class Rule {
+        constructor(
+            public a: Sprite | number,
+            public b: Sprite | number,
+            public pushable: boolean,
+            public direction: PushDirection,
+            public pushSpeed: number // 0 = as fast as the pusher moves
+        ) { }
+    }
+
+    // Set up lazily: in the extension's own test run, test.ts can run
+    // before this file's top-level code, so these may still be undefined.
+    let rules: Rule[];
+    let scenesWithHandler: scene.Scene[];
+
+    /**
+     * Stop a sprite (or every sprite of a kind) when it runs into another sprite or kind.
+     * Use once, in "on start".
+     */
     //% block="stop $spriteA when colliding with $spriteB"
     //% group="Solid Collisions"
     //% spriteA.shadow=variables_get
     //% spriteA.defl=mySprite
-    //% spriteB.shadow=variables_get
     //% spriteB.shadow=spritekind
     export function handleSolidCollision(spriteA: Sprite | number, spriteB: Sprite | number) {
-        handleAABBCollision(spriteA, spriteB, false, PushDirection.Omnidirectional);
+        addRule(spriteA, spriteB, false, PushDirection.Omnidirectional, 0);
     }
 
-    // Allows spriteA to push spriteB
-    //% block="allow $spriteA to push $spriteB in $direction"
+    /**
+     * Let a sprite (or every sprite of a kind) push another sprite or kind.
+     * Pushed sprites stop at walls, at the edge of the tilemap and at each other.
+     * Works for players too: use the same kind twice (e.g. Player pushes Player)
+     * and whoever walks into the other one does the pushing.
+     * Click + to set a push speed (pixels per second): heavy things get pushed slowly
+     * and slow the pusher down. Without it, things move as fast as the pusher.
+     * Use once, in "on start".
+     */
+    //% block="allow $spriteA to push $spriteB in $direction||at speed $speed"
     //% group="Pushable Collisions"
     //% spriteA.shadow=variables_get
     //% spriteA.defl=mySprite
-    //% spriteB.shadow=variables_get
     //% spriteB.shadow=spritekind
     //% direction.defl=CollisionHandler.PushDirection.Omnidirectional
-    //% color="#a349a4" weight=80
-    export function handlePushableCollision(spriteA: Sprite | number, spriteB: Sprite | number, direction: PushDirection) {
-        handleAABBCollision(spriteA, spriteB, true, direction);
+    //% speed.defl=30 speed.min=1 speed.max=200
+    //% expandableArgumentMode="toggle"
+    export function handlePushableCollision(spriteA: Sprite | number, spriteB: Sprite | number, direction: PushDirection, speed?: number) {
+        addRule(spriteA, spriteB, true, direction, speed > 0 ? speed : 0);
     }
 
-    function handleAABBCollision(spriteA: Sprite | number, spriteB: Sprite | number, pushable: boolean, direction: PushDirection) {
-        game.onUpdate(function () {
-            let spritesA: Sprite[] = typeof spriteA === "number" ? sprites.allOfKind(spriteA) : [spriteA];
-            let spritesB: Sprite[] = typeof spriteB === "number" ? sprites.allOfKind(spriteB) : [spriteB];
+    function addRule(a: Sprite | number, b: Sprite | number, pushable: boolean, direction: PushDirection, pushSpeed: number) {
+        if (!rules) rules = [];
+        if (!scenesWithHandler) scenesWithHandler = [];
+        // Same pair added again (e.g. block inside a loop): update it instead of stacking
+        let existing: Rule = null;
+        for (const r of rules) {
+            if (r.a === a && r.b === b) existing = r;
+        }
+        if (existing) {
+            existing.pushable = pushable;
+            existing.direction = direction;
+            existing.pushSpeed = pushSpeed;
+        } else {
+            rules.push(new Rule(a, b, pushable, direction, pushSpeed));
+        }
 
-            for (let a of spritesA) {
-                for (let b of spritesB) {
-                    if (a === b) continue;
+        // One update handler per scene, no matter how many rules
+        const current = game.currentScene();
+        if (scenesWithHandler.indexOf(current) < 0) {
+            scenesWithHandler.push(current);
+            game.onUpdate(step);
+        }
+    }
 
-                    let boxA = getBoundingBox(a);
-                    let boxB = getBoundingBox(b);
+    function resolveList(target: Sprite | number): Sprite[] {
+        if (typeof target === "number") return sprites.allOfKind(target as number);
+        const s = target as Sprite;
+        return s ? [s] : [];
+    }
 
-                    if (isAABBOverlapping(boxA, boxB)) {
-                        let overlapX = Math.min(boxA.right - boxB.left, boxB.right - boxA.left);
-                        let overlapY = Math.min(boxA.bottom - boxB.top, boxB.bottom - boxA.top);
+    function isAlive(s: Sprite): boolean {
+        return s && !(s.flags & sprites.Flag.Destroyed);
+    }
 
-                        let moveX = 0;
-                        let moveY = 0;
+    // A few passes per frame, so stacks and chains (box on box on player...)
+    // settle in one frame instead of sinking into each other.
+    const MAX_PASSES = 4;
+    // Contacts with this much (or less) vertical overlap count as standing / landing /
+    // stepping up, so walking over a row of sprites never catches on their corners.
+    const STEP_UP = 3;
 
-                        // Determine movement direction based on the smaller overlap
-                        if (overlapX < overlapY) {
-                            moveX = a.x > b.x ? -overlapX : overlapX;
-                        } else {
-                            moveY = a.y > b.y ? -overlapY : overlapY;
-                        }
+    // Sprite lists for each rule, looked up once per frame (sprites.allOfKind is not free)
+    let listsA: Sprite[][] = [];
+    let listsB: Sprite[][] = [];
 
-                        if (pushable) {
-                            // Restrict movement based on push direction
-                            if (direction === PushDirection.X_Axis) {
-                                moveY = 0;
-                            } else if (direction === PushDirection.Y_Axis) {
-                                moveX = 0;
-                            }
+    function step() {
+        listsA = [];
+        listsB = [];
+        for (const rule of rules) {
+            const la = resolveList(rule.a);
+            const lb = resolveList(rule.b);
+            listsA.push(la);
+            listsB.push(lb);
+            // Remember speeds before anything is corrected this frame, so later passes
+            // still know who was moving (and don't shove sprites that stood still).
+            for (const s of la) snapshot(s);
+            for (const s of lb) snapshot(s);
+        }
+        tracked = [];
+        for (let r = 0; r < listsA.length; r++) {
+            for (const s of listsA[r]) if (tracked.indexOf(s) < 0) tracked.push(s);
+            for (const s of listsB[r]) if (tracked.indexOf(s) < 0) tracked.push(s);
+        }
 
-                            let newX = b.x + moveX;
-                            let newY = b.y + moveY;
+        applyCarry();
 
-                            // Check if the pushable object will hit a wall or move out of bounds
-                            if (isOnWallTile(newX, newY) || isOutOfBounds(newX, newY, b)) {
-                                handleSolidCollision(a, b);
-                                a.vx = 0; // Stop player movement
-                                a.vy = 0;
-                            } else {
-                                b.setPosition(newX, newY);
-                            }
+        for (let pass = 0; pass < MAX_PASSES; pass++) {
+            // Side hits first (sprites at the same height), then landing/standing.
+            // Otherwise a sprite pressed against a stack could "stand" on the corner below.
+            const sides = runPhase(true);
+            const rest = runPhase(false);
+            if (!sides && !rest) break;
+        }
 
-                        } else {
-                            let newX2 = clamp(a.x - moveX, spriteMinX(a), spriteMaxX(a));
-                            let newY2 = clamp(a.y - moveY, spriteMinY(a), spriteMaxY(a));
+        rememberStanding();
+    }
 
-                            // Prevent player from moving past tilemap boundaries
-                            if (!isOutOfBounds(newX2, newY2, a)) {
-                                a.setPosition(newX2, newY2);
-                            }
-                            a.vx = 0;
-                            a.vy = 0;
-                        }
-                    }
+    // ---------- Carrying: whatever stands on a sprite moves along with it ----------
+    let tracked: Sprite[] = [];
+    let frameNo = 0;
+    const MAX_CARRY_STEP = 8; // bigger jumps are teleports (setPosition), not walking
+
+    function applyCarry() {
+        frameNo++;
+        const dt = game.eventContext().deltaTime;
+        for (const s of tracked) {
+            if (!isAlive(s)) continue;
+            const moved = totalMove(s, 0);
+            // A carried sprite has no speed of its own, but it IS moving: use its real
+            // movement as its speed, so bumping into things counts as a side hit.
+            if (dt > 0 && s.data["__swon"]) s.data["__swvx"] = moved / dt;
+        }
+        // Remember where everything is now, to measure next frame's movement
+        for (const s of tracked) s.data["__swlx"] = s.x;
+    }
+
+    // How far s moved sideways this frame: its own movement plus what carried it.
+    // Works up a stack: a rider on a rider on a walker moves with the walker.
+    function totalMove(s: Sprite, depth: number): number {
+        if (s.data["__swfr"] === frameNo) return s.data["__swmv"];
+        s.data["__swfr"] = frameNo;
+        s.data["__swmv"] = 0; // guards against loops
+
+        const lx = s.data["__swlx"];
+        let own = lx === undefined ? 0 : s.x - lx;
+        if (Math.abs(own) > MAX_CARRY_STEP) own = 0;
+
+        let carry = 0;
+        const on: Sprite = s.data["__swon"];
+        if (on && isAlive(on) && depth < 16) {
+            carry = totalMove(on, depth + 1);
+            // ride along, unless a wall is in the way (then slide off)
+            if (carry != 0 && canMoveTo(s, carry, 0, on, [])) s.x += carry;
+            else carry = 0;
+        }
+        s.data["__swmv"] = own + carry;
+        return own + carry;
+    }
+
+    // After everything is settled: who is standing on whom?
+    function rememberStanding() {
+        for (const s of tracked) {
+            if (!isAlive(s)) continue;
+            let best: Sprite = null;
+            let bestOverlap = 0;
+            for (const o of blockersFor(s)) {
+                if (o === s || !isAlive(o)) continue;
+                if (Math.abs(s.bottom - o.top) > 1) continue;
+                const ov = Math.min(s.right, o.right) - Math.max(s.left, o.left);
+                if (ov > bestOverlap) { bestOverlap = ov; best = o; }
+            }
+            s.data["__swon"] = best;
+        }
+    }
+
+    function runPhase(sideHitsOnly: boolean): boolean {
+        let changed = false;
+        for (let r = 0; r < rules.length; r++) {
+            const rule = rules[r];
+            const listA = listsA[r];
+            const listB = listsB[r];
+            for (const a of listA) {
+                if (!isAlive(a)) continue;
+                for (const b of listB) {
+                    if (a === b || !isAlive(b)) continue;
+                    if (resolve(rule, a, b, listA, listB, sideHitsOnly)) changed = true;
                 }
             }
-        });
+        }
+        return changed;
     }
 
-    // Checks if a given position collides with a wall tile
-    function isOnWallTile(x: number, y: number): boolean {
-        let tilemap = game.currentScene().tileMap;
-        if (!tilemap) return false;
-
-        let tempSprite = sprites.create(img`.`); // Create a temporary sprite for collision check
-        tempSprite.setPosition(x, y);
-        let onWall = tilemap.isOnWall(tempSprite);
-        tempSprite.destroy(); // Remove temporary sprite
-
-        return onWall;
+    function snapshot(s: Sprite) {
+        if (!s) return;
+        s.data["__swvx"] = s.vx;
+        s.data["__swvy"] = s.vy;
+    }
+    // Speed at the start of this frame's collision step
+    function svx(s: Sprite): number {
+        const v = s.data["__swvx"];
+        return v === undefined ? s.vx : v;
+    }
+    function svy(s: Sprite): number {
+        const v = s.data["__swvy"];
+        return v === undefined ? s.vy : v;
     }
 
-    // Checks if a position is outside the tilemap boundaries
-    function isOutOfBounds(x: number, y: number, sprite: Sprite): boolean {
-        let tilemap2 = game.currentScene().tileMap;
-        if (!tilemap2) return false;
-
-        let minX = spriteMinX(sprite);
-        let minY = spriteMinY(sprite);
-        let maxX = spriteMaxX(sprite);
-        let maxY = spriteMaxY(sprite);
-
-        return x < minX || x > maxX || y < minY || y > maxY;
+    function overlaps(l1: number, t1: number, r1: number, b1: number,
+        l2: number, t2: number, r2: number, b2: number): boolean {
+        return l1 < r2 && r1 > l2 && t1 < b2 && b1 > t2;
     }
 
-    // Gets the bounding box of a sprite
-    function getBoundingBox(sprite: Sprite): { left: number, right: number, top: number, bottom: number } {
-        return {
-            left: sprite.left,
-            right: sprite.right,
-            top: sprite.top,
-            bottom: sprite.bottom
-        };
+    function resolve(rule: Rule, a: Sprite, b: Sprite, listA: Sprite[], listB: Sprite[], sideHitsOnly: boolean): boolean {
+        if (!overlaps(a.left, a.top, a.right, a.bottom, b.left, b.top, b.right, b.bottom)) return false;
+
+        const overlapX = Math.min(a.right - b.left, b.right - a.left);
+        const overlapY = Math.min(a.bottom - b.top, b.bottom - a.top);
+        const shallow = overlapY <= STEP_UP;
+        if (sideHitsOnly && shallow) return false;
+
+        let alongX: boolean;
+        if (shallow && overlapX > overlapY) {
+            // One is just on top of the other: standing, landing or stepping up
+            alongX = false;
+        } else {
+            // Which side did they hit? The axis crossed most recently:
+            // overlap / closing speed = time since that edge was crossed.
+            const tX = timeSince(overlapX, svx(a) - svx(b));
+            const tY = timeSince(overlapY, svy(a) - svy(b));
+            alongX = tX != tY ? tX < tY : overlapX < overlapY;
+        }
+
+        // Direction from a towards b (+1 or -1). Same centre: use a's movement.
+        const sx = a.x < b.x ? 1 : a.x > b.x ? -1 : (svx(a) >= 0 ? 1 : -1);
+        const sy = a.y < b.y ? 1 : a.y > b.y ? -1 : (svy(a) >= 0 ? 1 : -1);
+
+        if (rule.pushable && pushAllowed(rule.direction, alongX)) {
+            // Both can push each other (e.g. Player pushes Player): only the one
+            // walking into the other pushes. The pair is also checked the other
+            // way round, so skip it here if b is the pusher.
+            if (listA.indexOf(b) >= 0) {
+                const aClosing = alongX ? svx(a) * sx : svy(a) * sy;
+                const bClosing = alongX ? -svx(b) * sx : -svy(b) * sy;
+                if (bClosing > aClosing) return false;
+            }
+            const overlap = alongX ? overlapX : overlapY;
+            // Push speed: b moves at most pushSpeed px/s, the rest pushes a back
+            // (so the pusher slows down to the push speed).
+            let amount = overlap;
+            if (rule.pushSpeed > 0) {
+                amount = Math.min(overlap, rule.pushSpeed * game.eventContext().deltaTime);
+            }
+            const dx = alongX ? sx * amount : 0;
+            const dy = alongX ? 0 : sy * amount;
+            // b may push the next one in line, and so on (a row of players or boxes)
+            const chain: Sprite[] = [];
+            if (collectPush(b, dx, dy, a, chain, 0)) {
+                for (const c of chain) {
+                    c.x += dx;
+                    c.y += dy;
+                }
+                const rest = overlap - amount;
+                if (rest > 0) {
+                    // pusher backs off the rest (position only, keeps its speed)
+                    if (alongX) a.x -= sx * rest;
+                    else a.y -= sy * rest;
+                }
+                return true;
+            }
+        }
+
+        // Solid (or push blocked). Correction for a is (ax, ay); for b it's the opposite.
+        const ax = alongX ? -sx * overlapX : 0;
+        const ay = alongX ? 0 : -sy * overlapY;
+
+        // Who moves? b can only be the one stopped if the rule lets it be
+        // (player vs player, or a pushable box).
+        const bStoppable = rule.pushable || listA.indexOf(b) >= 0;
+        let moveB = false;
+        if (bStoppable) {
+            if (alongX) {
+                // the one walking into the other stops; one standing still is never shoved
+                moveB = -svx(b) * sx > svx(a) * sx;
+            } else {
+                // stacked: the upper one moves up, the lower one is never pushed down
+                moveB = b.y < a.y;
+            }
+        }
+
+        const first = moveB ? b : a;
+        const second = moveB ? a : b;
+        const fx = moveB ? -ax : ax;
+        const fy = moveB ? -ay : ay;
+
+        // Never shove a sprite into a wall. Sideways, also never into another solid
+        // sprite (that's how boxes tunnelled through players). Vertically other sprites
+        // are allowed: stacks are sorted out bottom-up over the passes.
+        const firstBlockers = alongX ? blockersFor(first) : [];
+        const secondBlockers = alongX ? blockersFor(second) : [];
+        if (canMoveTo(first, fx, fy, second, firstBlockers)) {
+            moveBy(first, fx, fy);
+            return true;
+        }
+        // A wall is in the way (e.g. a box landing on a player standing on the floor):
+        // move the other one instead.
+        if (canMoveTo(second, -fx, -fy, first, secondBlockers)) {
+            moveBy(second, -fx, -fy);
+            return true;
+        }
+        if (alongX) {
+            // Squeezed between sprites on both sides: allow a sprite overlap
+            // (fixed in the next pass) rather than letting them sink into each other.
+            if (canMoveTo(first, fx, fy, second, [])) { moveBy(first, fx, fy); return true; }
+            if (canMoveTo(second, -fx, -fy, first, [])) { moveBy(second, -fx, -fy); return true; }
+        }
+        // Both are against walls: try the other axis, otherwise leave them
+        // overlapping rather than shove a sprite into a wall (it would fall through).
+        const ox = alongX ? 0 : -sx * overlapX;
+        const oy = alongX ? -sy * overlapY : 0;
+        if (canMoveTo(a, ox, oy, b, blockersFor(a))) {
+            moveBy(a, ox, oy);
+        } else {
+            // Stuck for now: at least stop them moving further into each other
+            if (alongX) {
+                if (a.vx * sx > 0) a.vx = 0;
+                if (b.vx * sx < 0) b.vx = 0;
+            } else {
+                if (a.vy * sy > 0) a.vy = 0;
+                if (b.vy * sy < 0) b.vy = 0;
+            }
+        }
+        return true;
     }
 
-    // Checks if two bounding boxes overlap
-    function isAABBOverlapping(boxA: { left: number, right: number, top: number, bottom: number },
-        boxB: { left: number, right: number, top: number, bottom: number }): boolean {
-        return (
-            boxA.left < boxB.right &&
-            boxA.right > boxB.left &&
-            boxA.top < boxB.bottom &&
-            boxA.bottom > boxB.top
-        );
+    // Move a sprite and stop its speed only on the axis it was pushed back along
+    function moveBy(s: Sprite, dx: number, dy: number) {
+        s.x += dx;
+        s.y += dy;
+        if (dx != 0 && s.vx * dx < 0) s.vx = 0;
+        if (dy != 0 && s.vy * dy < 0) s.vy = 0;
     }
 
-    // Restricts a value within a given range
-    function clamp(value: number, min: number, max: number): number {
-        return Math.max(min, Math.min(max, value));
+    function timeSince(overlap: number, relSpeed: number): number {
+        const speed = Math.abs(relSpeed);
+        return speed < 1 ? 999999 : overlap / speed;
     }
 
-    // Gets the minimum X position allowed for a sprite
-    function spriteMinX(sprite: Sprite): number {
-        return sprite.width / 2;
+    function pushAllowed(direction: PushDirection, alongX: boolean): boolean {
+        if (direction === PushDirection.X_Axis) return alongX;
+        if (direction === PushDirection.Y_Axis) return !alongX;
+        return true;
     }
 
-    // Gets the maximum X position allowed for a sprite within the tilemap
-    function spriteMaxX(sprite: Sprite): number {
-        let tilemap3 = game.currentScene().tileMap;
-        return tilemap3 ? tilemap3.areaWidth() - sprite.width / 2 : scene.screenWidth();
+    // Every sprite that b collides with under any rule (players, other boxes, gates...)
+    function blockersFor(b: Sprite): Sprite[] {
+        let result: Sprite[] = [];
+        for (let r = 0; r < listsA.length; r++) {
+            const la = listsA[r];
+            const lb = listsB[r];
+            if (la.indexOf(b) >= 0) result = result.concat(lb);
+            if (lb.indexOf(b) >= 0) result = result.concat(la);
+        }
+        return result;
     }
 
-    // Gets the minimum Y position allowed for a sprite
-    function spriteMinY(sprite: Sprite): number {
-        return sprite.height / 2;
+    // Can s move by (dx, dy)? Anything in the way that s is allowed to push (by any
+    // push rule) gets pushed too and is added to chain: a player pushing a row of
+    // players pushes the box at the end as well. Walls and other sprites block.
+    function collectPush(s: Sprite, dx: number, dy: number, pusher: Sprite, chain: Sprite[], depth: number): boolean {
+        if (!canMoveTo(s, dx, dy, pusher, [])) return false; // walls
+        const l = s.left + dx, t = s.top + dy, r = s.right + dx, btm = s.bottom + dy;
+        for (const o of blockersFor(s)) {
+            if (o === s || o === pusher || !isAlive(o) || chain.indexOf(o) >= 0) continue;
+            if (overlaps(s.left, s.top, s.right, s.bottom, o.left, o.top, o.right, o.bottom)) continue;
+            if (!overlaps(l, t, r, btm, o.left, o.top, o.right, o.bottom)) continue;
+            if (depth < 8 && canPush(s, o, dx != 0)
+                && collectPush(o, dx, dy, s, chain, depth + 1)) continue;
+            return false;
+        }
+        if (chain.indexOf(s) < 0) chain.push(s);
+        return true;
     }
 
-    // Gets the maximum Y position allowed for a sprite within the tilemap
-    function spriteMaxY(sprite: Sprite): number {
-        let tilemap4 = game.currentScene().tileMap;
-        return tilemap4 ? tilemap4.areaHeight() - sprite.height / 2 : scene.screenHeight();
+    function canPush(s: Sprite, o: Sprite, alongX: boolean): boolean {
+        for (let r = 0; r < rules.length; r++) {
+            const rule = rules[r];
+            if (!rule.pushable || !pushAllowed(rule.direction, alongX)) continue;
+            if (listsA[r].indexOf(s) >= 0 && listsB[r].indexOf(o) >= 0) return true;
+        }
+        return false;
+    }
+
+    // Can b move by (dx, dy) without hitting a wall tile, the tilemap edge or one of `others`?
+    // (`pusher` is ignored: it's the sprite b is being separated from.)
+    function canMoveTo(b: Sprite, dx: number, dy: number, pusher: Sprite, others: Sprite[]): boolean {
+        const l = b.left + dx;
+        const t = b.top + dy;
+        const r = b.right + dx;
+        const btm = b.bottom + dy;
+
+        const tm = game.currentScene().tileMap;
+        if (tm && tm.enabled) {
+            const size = 1 << tm.scale;
+            const c0 = Math.floor(l / size);
+            const c1 = Math.floor((r - 1) / size);
+            const r0 = Math.floor(t / size);
+            const r1 = Math.floor((btm - 1) / size);
+            for (let c = c0; c <= c1; c++) {
+                for (let row = r0; row <= r1; row++) {
+                    // isObstacle is also true outside the map, so this covers the edges
+                    if (tm.isObstacle(c, row)) return false;
+                }
+            }
+        }
+
+        for (const o of others) {
+            if (o === b || o === pusher || !isAlive(o)) continue;
+            // Already overlapping it? That contact gets sorted out on its own,
+            // so it doesn't block (lets whole stacks push apart bottom-up).
+            if (overlaps(b.left, b.top, b.right, b.bottom, o.left, o.top, o.right, o.bottom)) continue;
+            if (overlaps(l, t, r, btm, o.left, o.top, o.right, o.bottom)) return false;
+        }
+        return true;
     }
 }
