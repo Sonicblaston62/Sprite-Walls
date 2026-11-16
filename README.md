@@ -6,8 +6,6 @@
 
 ### **Important Notes**  
 - Sprites must be at least **4x4 pixels** wide for collisions to work correctly.  
-- Collision is handled using **custom hitboxes**, independent of the sprite's built-in bounding box.  
-
 ---
 
 ### **Installation**  
@@ -15,7 +13,7 @@
 2. Click **"Extensions" → "Advanced → Extensions"**.  
 3. Paste this link in the search bar and press Enter:  
 ```
-https://github.com/Sonicblaston62/Sprite-Walls-Engine
+https://github.com/Sonicblaston62/Sprite-Walls
 ```
 4. Select the extension and click **"Add"**.  
 
@@ -49,6 +47,6 @@ CollisionHandler.handlePushableCollision(mySprite, SpriteKind.Player, CollisionH
 ---
 
 ### **License & Contributions**  
-Released under the **MIT License**, allowing free use and modification. Contributions are welcome—fork the repository, make changes in `custom.ts`, and submit a pull request.  
+Released under the **MIT License**, allowing free use and modification. Contributions are welcome—fork the repository, make changes in `main.ts`, and submit a pull request.  
 
 For issues or feedback, visit the [GitHub Issues](https://github.com/Sonicblaston62/Sprite-Walls-Engine/issues) page.
