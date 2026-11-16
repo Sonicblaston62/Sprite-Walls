@@ -316,9 +316,28 @@ namespace CollisionHandler {
         const fx = moveB ? -ax : ax;
         const fy = moveB ? -ay : ay;
 
-        // Never shove a sprite into a wall. Sideways, also never into another solid
-        // sprite (that's how boxes tunnelled through players). Vertically other sprites
-        // are allowed: stacks are sorted out bottom-up over the passes.
+        if (!alongX) {
+            // Up/down: move the whole column. Lifting a sprite also lifts everything
+            // stacked on it; if the top of the column hits a ceiling, the column can't
+            // move, so the one below is pushed down instead (and stops jumping).
+            const chain1: Sprite[] = [];
+            if (collectLift(first, fy, second, chain1, 0)) {
+                for (const c of chain1) moveBy(c, 0, fy);
+                return true;
+            }
+            const chain2: Sprite[] = [];
+            if (collectLift(second, -fy, first, chain2, 0)) {
+                for (const c of chain2) moveBy(c, 0, -fy);
+                return true;
+            }
+            // Squeezed between floor and ceiling: stop them moving into each other
+            if (a.vy * sy > 0) a.vy = 0;
+            if (b.vy * sy < 0) b.vy = 0;
+            return true;
+        }
+
+        // Sideways: never shove a sprite into a wall or into another solid sprite
+        // (that's how boxes tunnelled through players).
         const firstBlockers = alongX ? blockersFor(first) : [];
         const secondBlockers = alongX ? blockersFor(second) : [];
         if (canMoveTo(first, fx, fy, second, firstBlockers)) {
@@ -403,6 +422,44 @@ namespace CollisionHandler {
         }
         if (chain.indexOf(s) < 0) chain.push(s);
         return true;
+    }
+
+    // Can s move up/down by dy? Sprites in the way that can move (not walls or
+    // fixed sprites like gates) are moved too and added to chain.
+    function collectLift(s: Sprite, dy: number, from: Sprite, chain: Sprite[], depth: number): boolean {
+        if (!canMoveTo(s, 0, dy, from, [])) return false; // walls / ceiling / floor
+        const t = s.top + dy, btm = s.bottom + dy;
+        for (const o of blockersFor(s)) {
+            if (o === s || o === from || !isAlive(o) || chain.indexOf(o) >= 0) continue;
+            // only what's on the side we're moving towards
+            if (dy < 0 ? o.y >= s.y : o.y <= s.y) continue;
+            if (!overlaps(s.left, t, s.right, btm, o.left, o.top, o.right, o.bottom)) continue;
+            if (!isMovable(o)) {
+                // fixed sprite: only blocks if we'd newly run into it
+                if (overlaps(s.left, s.top, s.right, s.bottom, o.left, o.top, o.right, o.bottom)) continue;
+                return false;
+            }
+            // move o just enough to clear s's new position
+            const need = dy < 0 ? o.bottom - t : btm - o.top;
+            if (need <= 0) continue;
+            if (depth >= 8) return false;
+            const sub: Sprite[] = [];
+            if (!collectLift(o, dy < 0 ? -need : need, s, sub, depth + 1)) return false;
+            // o and its column move by their own amount right away
+            for (const c of sub) if (chain.indexOf(c) < 0) moveBy(c, 0, dy < 0 ? -need : need);
+        }
+        if (chain.indexOf(s) < 0) chain.push(s);
+        return true;
+    }
+
+    // Can this sprite be moved by collisions? (Sprites only ever named as the
+    // "wall" side of solid rules, like a gate, can't.)
+    function isMovable(o: Sprite): boolean {
+        for (let r = 0; r < rules.length; r++) {
+            if (listsA[r].indexOf(o) >= 0) return true;
+            if (rules[r].pushable && listsB[r].indexOf(o) >= 0) return true;
+        }
+        return false;
     }
 
     function canPush(s: Sprite, o: Sprite, alongX: boolean): boolean {
