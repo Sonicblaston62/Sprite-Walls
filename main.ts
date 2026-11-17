@@ -223,10 +223,12 @@ namespace CollisionHandler {
         const dt = game.eventContext().deltaTime;
         for (const s of tracked) {
             if (!isAlive(s)) continue;
-            const moved = totalMove(s, 0);
-            // A carried sprite has no speed of its own, but it IS moving: use its real
-            // movement as its speed, so bumping into things counts as a side hit.
-            if (dt > 0 && s.data["__swon"]) s.data["__swvx"] = moved / dt;
+            totalMove(s, 0);
+            // A carried sprite moves without speed of its own: add the carried part
+            // to its speed, so bumping into things counts as a side hit. (Only the
+            // carried part: being pushed last frame is not "moving" this frame.)
+            const carried: number = s.data["__swcar"];
+            if (dt > 0 && carried) s.data["__swvx"] = s.vx + carried / dt;
         }
         // Remember where everything is now, to measure next frame's movement
         for (const s of tracked) s.data["__swlx"] = s.x;
@@ -252,6 +254,7 @@ namespace CollisionHandler {
             else carry = 0;
         }
         s.data["__swmv"] = own + carry;
+        s.data["__swcar"] = carry;
         return own + carry;
     }
 
@@ -382,6 +385,12 @@ namespace CollisionHandler {
             const tX = timeSince(overlapX, svx(a) - svx(b));
             const tY = timeSince(overlapY, svy(a) - svy(b));
             alongX = tX != tY ? tX < tY : overlapX < overlapY;
+            // Never resolve by a big jump when a small one would do: e.g. a player
+            // jumping up beside a stack that is 2.6 px into its side must not be
+            // lifted 14 px onto its top.
+            const chosen = alongX ? overlapX : overlapY;
+            const other = alongX ? overlapY : overlapX;
+            if (chosen > 4 && chosen > 3 * other) alongX = !alongX;
         }
 
         // Direction from a towards b (+1 or -1). Same centre: use a's movement.
