@@ -428,7 +428,7 @@ namespace CollisionHandler {
             const bIsUpper = b.y < a.y;
             const upper = bIsUpper ? b : a;
             const lower = bIsUpper ? a : b;
-            const lowerJumpingIn = svy(lower) < svy(upper) - 1;
+            const lowerJumpingIn = svy(lower) < -1 && svy(lower) < svy(upper) - 1;
             const riding = upper.data["__swon"] === lower;
             const moveUpper = !lowerJumpingIn || riding;
             moveB = moveUpper ? bIsUpper : !bIsUpper;
@@ -741,5 +741,20 @@ namespace CollisionHandler {
     //% passes.defl=4 passes.min=1 passes.max=8
     export function setCollisionPasses(passes: number) {
         maxPasses = Math.max(1, Math.floor(passes));
+    }
+
+    /**
+     * True if the sprite is standing on a wall tile, or on top of a sprite it
+     * collides with through Sprite Walls (a player, a box...). Use it to allow jumping,
+     * instead of checking that the sprite's speed is exactly 0.
+     */
+    //% block="$sprite is standing on something"
+    //% group="Info" weight=100
+    //% sprite.shadow=variables_get sprite.defl=mySprite
+    export function isStanding(sprite: Sprite): boolean {
+        if (!sprite) return false;
+        if (sprite.isHittingTile(CollisionDirection.Bottom)) return true;
+        const on: Sprite = sprite.data["__swon"];
+        return !!on && isAlive(on);
     }
 }
