@@ -82,7 +82,11 @@ namespace CollisionHandler {
         const current = game.currentScene();
         if (scenesWithHandler.indexOf(current) < 0) {
             scenesWithHandler.push(current);
-            game.onUpdate(step);
+            // Run right after MakeCode's physics (priority 15) and before game code
+            // ("on game update" = 20, update intervals = 19). So game code never sees
+            // the in-between state, e.g. a sprite standing on another sprite always
+            // has vy = 0, just like on the floor.
+            game.eventContext().registerFrameHandler(scene.PHYSICS_PRIORITY + 1, step);
         }
     }
 
@@ -271,6 +275,21 @@ namespace CollisionHandler {
             }
             s.data["__swon"] = best;
         }
+        // Standing on a sprite works like standing on the floor: the falling speed
+        // is cancelled every frame (otherwise it bounces between 0 and a few frames
+        // of gravity, and "vy = 0" checks for jumping only work now and then).
+        // Bottom of a stack first, so each one gets the speed of what it stands on.
+        for (const t of tracked) settle(t, 0);
+    }
+
+    function settle(s: Sprite, depth: number) {
+        if (s.data["__swsf"] === frameNo) return;
+        s.data["__swsf"] = frameNo;
+        const on: Sprite = s.data["__swon"];
+        if (!on || !isAlive(on) || depth > 16) return;
+        settle(on, depth + 1);
+        // never pull it down faster than gravity would, never stop it rising off
+        if (s.vy > on.vy && s.vy >= 0) s.vy = Math.max(0, on.vy);
     }
 
     // Cached edges of every tracked sprite (sprite.left etc. are function calls,
