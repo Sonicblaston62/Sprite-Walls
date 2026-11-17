@@ -47,7 +47,7 @@ namespace CollisionHandler {
      * Works for players too: use the same kind twice (e.g. Player pushes Player)
      * and whoever walks into the other one does the pushing.
      * Click + to set a push speed (pixels per second): heavy things get pushed slowly
-     * and slow the pusher down. Without it, things move as fast as the pusher.
+     * and slow the pusher down. Without it (or 0), things move as fast as the pusher.
      * Use once, in "on start".
      */
     //% block="allow $spriteA to push $spriteB in $direction||at speed $speed"
@@ -56,7 +56,7 @@ namespace CollisionHandler {
     //% spriteA.defl=mySprite
     //% spriteB.shadow=spritekind
     //% direction.defl=CollisionHandler.PushDirection.Omnidirectional
-    //% speed.defl=30 speed.min=1 speed.max=200
+    //% speed.min=0 speed.max=200
     //% expandableArgumentMode="toggle"
     export function handlePushableCollision(spriteA: Sprite | number, spriteB: Sprite | number, direction: PushDirection, speed?: number) {
         addRule(spriteA, spriteB, true, direction, speed > 0 ? speed : 0);
@@ -400,10 +400,22 @@ namespace CollisionHandler {
             }
             const overlap = alongX ? overlapX : overlapY;
             // b may push the next one in line, and so on (a row of players or boxes)
-            const chain: Sprite[] = [];
-            const fullX = alongX ? sx * overlap : 0;
-            const fullY = alongX ? 0 : sy * overlap;
-            if (collectPush(b, fullX, fullY, a, chain, 0)) {
+            let chain: Sprite[] = [];
+            let fullX = alongX ? sx * overlap : 0;
+            let fullY = alongX ? 0 : sy * overlap;
+            let ok = collectPush(b, fullX, fullY, a, chain, 0);
+            if (!ok) {
+                // Blocked: maybe there's still a gap of less than one push step up to
+                // the wall. Close it, so pushed things end up touching walls exactly.
+                const gap = gapToWall(b, alongX, alongX ? sx : sy);
+                if (gap > 0.01 && gap < overlap) {
+                    chain = [];
+                    fullX = alongX ? sx * gap : 0;
+                    fullY = alongX ? 0 : sy * gap;
+                    ok = collectPush(b, fullX, fullY, a, chain, 0);
+                }
+            }
+            if (ok) {
                 // Push speed: the row moves at most as fast as its slowest member
                 // (its own push speed, else the push block's speed; 0 = no limit).
                 // The rest pushes the pusher back, so it slows down to that speed.
@@ -412,8 +424,9 @@ namespace CollisionHandler {
                     const cs = getFor(c, "speed", rule.pushSpeed);
                     if (cs > 0 && (speed == 0 || cs < speed)) speed = cs;
                 }
-                let amount = overlap;
-                if (speed > 0) amount = Math.min(overlap, speed * game.eventContext().deltaTime);
+                const pushDist = Math.abs(fullX + fullY);
+                let amount = pushDist;
+                if (speed > 0) amount = Math.min(pushDist, speed * game.eventContext().deltaTime);
                 const dx = alongX ? sx * amount : 0;
                 const dy = alongX ? 0 : sy * amount;
                 for (const c of chain) {
@@ -625,6 +638,31 @@ namespace CollisionHandler {
         return false;
     }
 
+    // Distance from b's edge to the next tile edge in that direction, if that next
+    // tile is a wall (else 0).
+    function gapToWall(b: Sprite, alongX: boolean, dir: number): number {
+        const tm = game.currentScene().tileMap;
+        if (!tm || !tm.enabled) return 0;
+        const size = 1 << tm.scale;
+        const edge = alongX ? (dir > 0 ? b.right : b.left) : (dir > 0 ? b.bottom : b.top);
+        const boundary = dir > 0 ? Math.ceil(edge / size) * size : Math.floor(edge / size) * size;
+        const gap = Math.abs(boundary - edge);
+        // the tile just past that boundary must be a wall somewhere along b's side
+        const probe = boundary + (dir > 0 ? 1 : -1);
+        if (alongX) {
+            const c = Math.floor(probe / size);
+            for (let row = Math.floor(b.top / size); row <= Math.ceil(b.bottom / size) - 1; row++) {
+                if (tm.isObstacle(c, row)) return gap;
+            }
+        } else {
+            const row = Math.floor(probe / size);
+            for (let c = Math.floor(b.left / size); c <= Math.ceil(b.right / size) - 1; c++) {
+                if (tm.isObstacle(c, row)) return gap;
+            }
+        }
+        return 0;
+    }
+
     // Can b move by (dx, dy) without hitting a wall tile, the tilemap edge or one of `others`?
     // (`pusher` is ignored: it's the sprite b is being separated from.)
     function canMoveTo(b: Sprite, dx: number, dy: number, pusher: Sprite, others: number[]): boolean {
@@ -636,10 +674,13 @@ namespace CollisionHandler {
         const tm = game.currentScene().tileMap;
         if (tm && tm.enabled) {
             const size = 1 << tm.scale;
+            // Tiles the box overlaps. Exact edges: a box ending exactly on a tile edge
+            // doesn't touch the next tile, but 0.3 px past it does. (Using "edge - 1"
+            // here let sprites be pushed up to 1 px into walls and floors.)
             const c0 = Math.floor(l / size);
-            const c1 = Math.floor((r - 1) / size);
+            const c1 = Math.ceil(r / size) - 1;
             const r0 = Math.floor(t / size);
-            const r1 = Math.floor((btm - 1) / size);
+            const r1 = Math.ceil(btm / size) - 1;
             for (let c = c0; c <= c1; c++) {
                 for (let row = r0; row <= r1; row++) {
                     // isObstacle is also true outside the map, so this covers the edges
