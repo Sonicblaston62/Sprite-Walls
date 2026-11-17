@@ -194,6 +194,7 @@ namespace CollisionHandler {
         }
 
         rememberStanding();
+        if (debugOn) debugEndFrame();
     }
 
     // ---------- Carrying: whatever stands on a sprite moves along with it ----------
@@ -384,6 +385,7 @@ namespace CollisionHandler {
         }
 
         // Direction from a towards b (+1 or -1). Same centre: use a's movement.
+        if (debugOn) debugNote("#" + a.id + "/#" + b.id + (alongX ? " side" : " top") + " ov" + r1(overlapX) + "," + r1(overlapY));
         const sx = a.x < b.x ? 1 : a.x > b.x ? -1 : (svx(a) >= 0 ? 1 : -1);
         const sy = a.y < b.y ? 1 : a.y > b.y ? -1 : (svy(a) >= 0 ? 1 : -1);
 
@@ -521,6 +523,7 @@ namespace CollisionHandler {
 
     // Move a sprite and stop its speed only on the axis it was pushed back along
     function moveBy(s: Sprite, dx: number, dy: number) {
+        if (debugOn) debugNote("move#" + s.id + " " + r1(dx) + "," + r1(dy));
         s.x += dx;
         s.y += dy;
         refreshOne(s);
@@ -775,5 +778,95 @@ namespace CollisionHandler {
         if (sprite.isHittingTile(CollisionDirection.Bottom)) return true;
         const on: Sprite = sprite.data["__swon"];
         return !!on && isAlive(on);
+    }
+
+    // =====================================================================
+    // Debug mode: boxes on screen + a recording of the last few seconds
+    // =====================================================================
+
+    // (no starting values: in the extension's own test, game code can run before
+    // this file's top-level code, which would switch debug mode off again)
+    let debugOn: boolean;
+    let debugFrames: string[];   // last DEBUG_KEEP frames, oldest first
+    let debugNotes: string[];    // what happened during the current frame
+    let debugRenderer: scene.Renderable;
+    let debugFrame: number;
+    const DEBUG_KEEP = 90;       // about 3 seconds
+
+    function r1(v: number): number { return Math.round(v * 10) / 10; }
+
+    function debugNote(text: string) {
+        if (debugNotes && debugNotes.length < 40) debugNotes.push(text);
+    }
+
+    function debugEndFrame() {
+        debugFrame = (debugFrame || 0) + 1;
+        let line = "F" + debugFrame + " t" + game.runtime();
+        for (const s of tracked) {
+            if (!isAlive(s)) continue;
+            const on: Sprite = s.data["__swon"];
+            line += " | #" + s.id + " k" + s.kind() + " " + r1(s.x) + "," + r1(s.y)
+                + " v" + r1(s.vx) + "," + r1(s.vy) + (on ? " on#" + on.id : "");
+        }
+        if (debugNotes.length) line += " || " + debugNotes.join("; ");
+        debugNotes = [];
+        debugFrames.push(line);
+        if (debugFrames.length > DEBUG_KEEP) debugFrames.shift();
+    }
+
+    /**
+     * Debug mode: draws a box around every sprite Sprite Walls handles (green =
+     * standing on something, yellow = in the air) with its id number and a line to
+     * what it stands on, plus a frame counter. It also keeps a recording of the last
+     * 3 seconds, which "print debug recording" writes to the console.
+     * Turn it off for the finished game: it slows things down.
+     */
+    //% block="set Sprite Walls debug mode $on"
+    //% group="Debug" weight=100
+    //% on.shadow=toggleOnOff on.defl=true
+    export function setDebugMode(on: boolean) {
+        debugOn = on;
+        if (!on) return;
+        if (!debugFrames) debugFrames = [];
+        if (!debugNotes) debugNotes = [];
+        if (!debugRenderer) {
+            debugRenderer = scene.createRenderable(200, function (target: Image, camera: scene.Camera) {
+                if (!debugOn || !tracked) return;
+                const ox = camera.drawOffsetX;
+                const oy = camera.drawOffsetY;
+                for (const s of tracked) {
+                    if (!isAlive(s)) continue;
+                    const on: Sprite = s.data["__swon"];
+                    const standing = !!on || s.isHittingTile(CollisionDirection.Bottom);
+                    const l = Math.floor(s.left - ox);
+                    const t = Math.floor(s.top - oy);
+                    target.drawRect(l, t, Math.floor(s.width), Math.floor(s.height), standing ? 7 : 5);
+                    target.print("" + s.id, l + 1, t + 1, 1, image.font5);
+                    if (on && isAlive(on)) {
+                        target.drawLine(Math.floor(s.x - ox), Math.floor(s.bottom - oy),
+                            Math.floor(on.x - ox), Math.floor(on.top - oy + 2), 2);
+                    }
+                }
+                target.print("F" + (debugFrame || 0), 1, 1, 1, image.font5);
+            });
+        }
+    }
+
+    /**
+     * Writes the debug recording (last ~3 seconds, one line per frame) to the
+     * console, so it can be copied. Good to put on a button: press it right after
+     * a bug happens. Needs debug mode on.
+     */
+    //% block="print Sprite Walls debug recording"
+    //% group="Debug" weight=90
+    export function printDebugRecording() {
+        if (!debugFrames || debugFrames.length == 0) {
+            console.log("Sprite Walls: no recording (turn debug mode on first)");
+            return;
+        }
+        console.log("=== Sprite Walls recording: " + debugFrames.length + " frames ===");
+        console.log("#id k=kind x,y v=vx,vy on#=standing on | side/top = collision, move = correction");
+        for (const line of debugFrames) console.log(line);
+        console.log("=== end ===");
     }
 }
