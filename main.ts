@@ -588,12 +588,16 @@ namespace CollisionHandler {
             if (!isMovable(o)) {
                 // fixed sprite: only blocks if we'd newly run into it
                 if (overlaps(sl, st, sr, sb, bL[j], bT[j], bR[j], bB[j])) continue;
+                if (debugOn) debugNote("lift #" + s.id + " blocked by fixed #" + o.id);
                 return false;
             }
             // move o just enough to clear s's new position
             const need = dy < 0 ? bB[j] - t : btm - bT[j];
             if (need <= 0) continue;
-            if (depth >= 8) return false;
+            if (depth >= 8) {
+                if (debugOn) debugNote("lift #" + s.id + " stack too tall");
+                return false;
+            }
             const sub: Sprite[] = [];
             if (!collectLift(o, dy < 0 ? -need : need, s, sub, depth + 1)) return false;
             // o and its column move by their own amount right away
@@ -639,7 +643,10 @@ namespace CollisionHandler {
             for (let c = c0; c <= c1; c++) {
                 for (let row = r0; row <= r1; row++) {
                     // isObstacle is also true outside the map, so this covers the edges
-                    if (tm.isObstacle(c, row)) return false;
+                    if (tm.isObstacle(c, row)) {
+                        if (debugOn) debugNote("#" + b.id + " " + rnd1(dx) + "," + rnd1(dy) + " blocked by wall tile col" + c + " row" + row);
+                        return false;
+                    }
                 }
             }
         }
@@ -653,6 +660,7 @@ namespace CollisionHandler {
             if (!overlaps(l, t, r, btm, bL[j], bT[j], bR[j], bB[j])) continue;
             const o = tracked[j];
             if (o === b || o === pusher || !isAlive(o)) continue;
+            if (debugOn) debugNote("#" + b.id + " " + rnd1(dx) + "," + rnd1(dy) + " blocked by #" + o.id);
             return false;
         }
         return true;
@@ -794,9 +802,10 @@ namespace CollisionHandler {
     const DEBUG_KEEP = 90;       // about 3 seconds
 
     function r1(v: number): number { return Math.round(v * 10) / 10; }
+    function rnd1(v: number): number { return Math.round(v * 10) / 10; }
 
     function debugNote(text: string) {
-        if (debugNotes && debugNotes.length < 40) debugNotes.push(text);
+        if (debugNotes && debugNotes.length < 60) debugNotes.push(text);
     }
 
     function debugEndFrame() {
@@ -866,6 +875,8 @@ namespace CollisionHandler {
         }
         console.log("=== Sprite Walls recording: " + debugFrames.length + " frames ===");
         console.log("#id k=kind x,y v=vx,vy on#=standing on | side/top = collision, move = correction");
+        const tm = game.currentScene().tileMap;
+        if (tm && tm.enabled) console.log("tilemap " + tm.areaWidth() + "x" + tm.areaHeight() + " px, tile " + (1 << tm.scale) + " px");
         for (const line of debugFrames) console.log(line);
         console.log("=== end ===");
     }
