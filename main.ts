@@ -838,6 +838,42 @@ namespace CollisionHandler {
         return !!on && isAlive(on);
     }
 
+    /**
+     * Every sprite standing on top of this sprite: the ones directly on it,
+     * plus everyone standing on them, and so on (the whole pile).
+     * Only sprites with a Sprite Walls rule count.
+     */
+    //% block="sprites stacked on top of $sprite"
+    //% group="Info" weight=90
+    //% sprite.shadow=variables_get sprite.defl=mySprite
+    export function spritesOnTop(sprite: Sprite): Sprite[] {
+        const out: Sprite[] = [];
+        if (!sprite || !tracked) return out;
+        for (const s of tracked) {
+            if (s === sprite || !isAlive(s)) continue;
+            let on: Sprite = s.data["__swon"];
+            let depth = 0;
+            while (on && depth < 32) {
+                if (on === sprite) { out.push(s); break; }
+                on = on.data["__swon"];
+                depth++;
+            }
+        }
+        return out;
+    }
+
+    /**
+     * How many sprites are standing on top of this sprite, counting the whole
+     * pile (4 players in a tower on a button = 4). Use it for buttons, elevators
+     * or doors that need a number of players on them.
+     */
+    //% block="number of sprites stacked on $sprite"
+    //% group="Info" weight=95
+    //% sprite.shadow=variables_get sprite.defl=mySprite
+    export function countOnTop(sprite: Sprite): number {
+        return spritesOnTop(sprite).length;
+    }
+
     // =====================================================================
     // Debug mode: boxes on screen + a recording of the last few seconds
     // =====================================================================
