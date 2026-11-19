@@ -218,6 +218,7 @@ namespace CollisionHandler {
         return i >= 0 && table[r][i] == 1;
     }
     const MAX_CARRY_STEP = 8; // bigger jumps are teleports (setPosition), not walking
+    const STICK_GAP = 4;      // how far a rider is pulled down onto something moving down
 
     function applyCarry() {
         const dt = game.eventContext().deltaTime;
@@ -276,6 +277,21 @@ namespace CollisionHandler {
                 if (o !== prev && svy(o) < -1) continue;
                 const ov = Math.min(bR[i], bR[j]) - Math.max(bL[i], bL[j]);
                 if (ov > bestOverlap && isAlive(o)) { bestOverlap = ov; best = o; }
+            }
+            // What it stood on is moving down (an elevator going down, a falling
+            // stack): gravity needs a few frames to catch up, so a gap opens and it
+            // would count as "in the air" now and then. Stick it back on instead.
+            if (!best && prev && isAlive(prev) && prev.vy > 0 && s.vy >= 0) {
+                const j = spriteNo(prev);
+                if (j >= 0 && j < tracked.length && tracked[j] === prev && blockerLists[i].indexOf(j) >= 0) {
+                    const gap = bT[j] - bB[i];
+                    const ov = Math.min(bR[i], bR[j]) - Math.max(bL[i], bL[j]);
+                    if (gap > 0 && gap <= STICK_GAP && ov > 0 && canMoveTo(s, 0, gap, prev, NONE)) {
+                        s.y += gap;
+                        refreshOne(s);
+                        best = prev;
+                    }
+                }
             }
             s.data["__swon"] = best;
         }
@@ -825,17 +841,25 @@ namespace CollisionHandler {
 
     /**
      * True if the sprite is standing on a wall tile, or on top of a sprite it
-     * collides with through Sprite Walls (a player, a box...). Use it to allow jumping,
-     * instead of checking that the sprite's speed is exactly 0.
+     * collides with through Sprite Walls (a player, a box, an elevator...) that is
+     * itself standing or has no gravity. Use it to allow jumping, instead of
+     * checking that the sprite's speed is exactly 0.
      */
     //% block="$sprite is standing on something"
     //% group="Info" weight=100
     //% sprite.shadow=variables_get sprite.defl=mySprite
     export function isStanding(sprite: Sprite): boolean {
+        return standingDepth(sprite, 0);
+    }
+
+    // Standing on the floor, on a platform without gravity (an elevator), or on
+    // someone who is standing themselves. Standing on someone in mid-air doesn't count.
+    function standingDepth(sprite: Sprite, depth: number): boolean {
         if (!sprite) return false;
         if (sprite.isHittingTile(CollisionDirection.Bottom)) return true;
         const on: Sprite = sprite.data["__swon"];
-        return !!on && isAlive(on);
+        if (!on || !isAlive(on) || depth > 16) return false;
+        return on.ay == 0 || standingDepth(on, depth + 1);
     }
 
     /**
