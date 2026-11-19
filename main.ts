@@ -124,6 +124,8 @@ namespace CollisionHandler {
 
     function step() {
         frameNo++;
+        fired = [];
+        if (!firedA) { firedA = []; firedB = []; }
         listsA = [];
         listsB = [];
         tracked = [];
@@ -150,6 +152,9 @@ namespace CollisionHandler {
             blockerLists.push([]);
             movable.push(false);
         }
+        // Pass-through pairs ("make A pass through B")
+        ignores = [];
+        for (let i = 0; i < n; i++) ignores.push(hasIgnores(tracked[i]));
         for (let r = 0; r < rules.length; r++) {
             const ma: number[] = [];
             const mb: number[] = [];
@@ -166,11 +171,11 @@ namespace CollisionHandler {
             inB.push(mb);
             for (const i of ia) {
                 const list = blockerLists[i];
-                for (const j of ib) if (j != i) list.push(j);
+                for (const j of ib) if (j != i && !ignoredPair(i, j)) list.push(j);
             }
             for (const i of ib) {
                 const list = blockerLists[i];
-                for (const j of ia) if (j != i) list.push(j);
+                for (const j of ia) if (j != i && !ignoredPair(i, j)) list.push(j);
             }
         }
         for (let i = 0; i < n; i++) {
@@ -194,6 +199,7 @@ namespace CollisionHandler {
         }
 
         rememberStanding();
+        fireEvents();
         if (debugOn) debugEndFrame();
     }
 
@@ -294,6 +300,7 @@ namespace CollisionHandler {
                 }
             }
             s.data["__swon"] = best;
+            if (best) record(SpriteWallsEvent.StandsOn, s, best);
         }
         // Standing on a sprite works like standing on the floor: the falling speed
         // is cancelled every frame (otherwise it bounces between 0 and a few frames
@@ -310,6 +317,152 @@ namespace CollisionHandler {
         settle(on, depth + 1);
         // never pull it down faster than gravity would, never stop it rising off
         if (s.vy > on.vy && s.vy >= 0) s.vy = Math.max(0, on.vy);
+    }
+
+    // ---------- Events: hits, standing on, pushed by, squished by ----------
+
+    export enum SpriteWallsEvent {
+        //% block="bumps into"
+        Hits,
+        //% block="starts standing on"
+        StandsOn,
+        //% block="is pushed by"
+        PushedBy,
+        //% block="is squished by"
+        SquishedBy
+    }
+
+    class EventRule {
+        constructor(
+            public event: SpriteWallsEvent,
+            public kind: number,
+            public otherKind: number,
+            public handler: (sprite: Sprite, otherSprite: Sprite) => void
+        ) { }
+    }
+
+    let eventRules: EventRule[];
+    // This frame's events, and when each one was last seen ("event,id,id" -> frame)
+    let fired: string[];
+    let firedA: Sprite[];
+    let firedB: Sprite[];
+    let lastSeenKey: string[];
+    let lastSeenFrame: number[];
+    const SQUISH_DEPTH = 4; // px pressed into each other with no room left
+
+    function record(e: SpriteWallsEvent, s: Sprite, o: Sprite) {
+        if (!eventRules || eventRules.length == 0) return;
+        const key = e + "," + s.id + "," + o.id;
+        if (fired.indexOf(key) >= 0) return;
+        fired.push(key);
+        firedA.push(s);
+        firedB.push(o);
+    }
+
+    // a and b are pressed into each other and neither has room to move away.
+    // It's a squish if b can't be stopped (an elevator, a moving platform) and is
+    // moving into a, or if they're already deep inside each other.
+    function squished(a: Sprite, b: Sprite, depth: number, bPressing: boolean) {
+        if (!bPressing && depth < SQUISH_DEPTH) return;
+        if (debugOn) debugNote("squish #" + a.id + " by #" + b.id + " " + r1(depth));
+        record(SpriteWallsEvent.SquishedBy, a, b);
+        if (!bPressing) record(SpriteWallsEvent.SquishedBy, b, a);
+    }
+
+    // Each event fires once when it starts, not every frame it lasts. A contact
+    // that disappears for a frame or two (landing, bumping) doesn't fire again.
+    function fireEvents() {
+        if (!eventRules || eventRules.length == 0) { firedA = []; firedB = []; return; }
+        if (!lastSeenKey) { lastSeenKey = []; lastSeenFrame = []; }
+        const toRun: number[] = [];
+        for (let i = 0; i < fired.length; i++) {
+            const k = lastSeenKey.indexOf(fired[i]);
+            if (k < 0) {
+                lastSeenKey.push(fired[i]);
+                lastSeenFrame.push(frameNo);
+                toRun.push(i);
+            } else {
+                if (frameNo - lastSeenFrame[k] > 2) toRun.push(i);
+                lastSeenFrame[k] = frameNo;
+            }
+        }
+        // forget old ones
+        for (let k = lastSeenKey.length - 1; k >= 0; k--) {
+            if (frameNo - lastSeenFrame[k] > 2) {
+                lastSeenKey.removeAt(k);
+                lastSeenFrame.removeAt(k);
+            }
+        }
+        const sa = firedA, sb = firedB;
+        firedA = []; firedB = [];
+        for (const i of toRun) {
+            const s = sa[i], o = sb[i];
+            const e = parseInt(fired[i].split(",")[0]);
+            for (const er of eventRules) {
+                if (er.event == e && s.kind() == er.kind && o.kind() == er.otherKind
+                    && isAlive(s) && isAlive(o)) er.handler(s, o);
+            }
+        }
+    }
+
+    /**
+     * Run code when a sprite bumps into, starts standing on, is pushed by, or is
+     * squished by another sprite (e.g. a player crushed between an elevator and the
+     * ceiling). Runs once when it starts, not every frame.
+     * Both kinds need a Sprite Walls rule ("stop ... when colliding" or "push").
+     */
+    //% block="on $sprite of kind $kind $event $otherSprite of kind $otherKind"
+    //% group="Events" weight=100
+    //% kind.shadow=spritekind otherKind.shadow=spritekind
+    //% draggableParameters="reporter"
+    export function onEvent(kind: number, event: SpriteWallsEvent, otherKind: number,
+        handler: (sprite: Sprite, otherSprite: Sprite) => void) {
+        if (!eventRules) eventRules = [];
+        if (!handler) return;
+        eventRules.push(new EventRule(event, kind, otherKind, handler));
+    }
+
+    // ---------- Pass through: one sprite ignores another ----------
+
+    let ignores: boolean[] = [];
+
+    function hasIgnores(s: Sprite): boolean {
+        const l: Sprite[] = s.data["__swig"];
+        return !!l && l.length > 0;
+    }
+
+    function ignoredPair(i: number, j: number): boolean {
+        if (!ignores[i] && !ignores[j]) return false;
+        const a = tracked[i], b = tracked[j];
+        const la: Sprite[] = a.data["__swig"];
+        const lb: Sprite[] = b.data["__swig"];
+        return (!!la && la.indexOf(b) >= 0) || (!!lb && lb.indexOf(a) >= 0);
+    }
+
+    /**
+     * Let one sprite pass through another, even though their kinds collide
+     * (e.g. one player can walk through a gate the others bump into).
+     * Switch it off again to make them solid to each other.
+     */
+    //% block="make $spriteA pass through $spriteB $on"
+    //% group="Settings" weight=40
+    //% spriteA.shadow=variables_get spriteA.defl=mySprite
+    //% spriteB.shadow=variables_get spriteB.defl=otherSprite
+    //% on.shadow=toggleOnOff on.defl=true
+    export function setPassThrough(spriteA: Sprite, spriteB: Sprite, on: boolean) {
+        if (!spriteA || !spriteB) return;
+        let l: Sprite[] = spriteA.data["__swig"];
+        if (!l) { l = []; spriteA.data["__swig"] = l; }
+        // drop destroyed sprites while here
+        for (let k = l.length - 1; k >= 0; k--) if (!isAlive(l[k])) l.removeAt(k);
+        const k = l.indexOf(spriteB);
+        if (on && k < 0) l.push(spriteB);
+        if (!on && k >= 0) l.removeAt(k);
+        // the other direction too, so "off" always works
+        if (!on) {
+            const lb: Sprite[] = spriteB.data["__swig"];
+            if (lb && lb.indexOf(spriteA) >= 0) lb.removeAt(lb.indexOf(spriteA));
+        }
     }
 
     // Cached edges of every tracked sprite (sprite.left etc. are function calls,
@@ -348,6 +501,7 @@ namespace CollisionHandler {
                     if (bL[ia] >= bR[ib] || bL[ib] >= bR[ia] || bT[ia] >= bB[ib] || bT[ib] >= bB[ia]) continue;
                     const b = tracked[ib];
                     if (!isAlive(b)) continue;
+                    if (ignoredPair(ia, ib)) continue;
                     if (resolve(r, rule, a, b, sideHitsOnly)) {
                         changed = true;
                         refreshOne(a);
@@ -386,6 +540,8 @@ namespace CollisionHandler {
         const overlapY = Math.min(a.bottom - b.top, b.bottom - a.top);
         const shallow = overlapY <= (stepUp === undefined ? 3 : stepUp);
         if (sideHitsOnly && shallow) return false;
+        record(SpriteWallsEvent.Hits, a, b);
+        record(SpriteWallsEvent.Hits, b, a);
 
         let alongX: boolean;
         if (shallow && overlapX > overlapY) {
@@ -458,6 +614,7 @@ namespace CollisionHandler {
                     c.x += dx;
                     c.y += dy;
                     refreshOne(c);
+                    record(SpriteWallsEvent.PushedBy, c, a);
                 }
                 const rest = overlap - amount;
                 if (rest > 0) {
@@ -508,12 +665,16 @@ namespace CollisionHandler {
                 for (const c of chain1) moveBy(c, 0, fy);
                 return true;
             }
+            // first can't move: if it's being pressed by something that can't be
+            // stopped (an elevator going up into a ceiling), that's a squish
+            if (second === b && !bStoppable && svy(b) * sy < 0) squished(a, b, overlapY, true);
             const chain2: Sprite[] = [];
             if (collectLift(second, -fy, first, chain2, 0)) {
                 for (const c of chain2) moveBy(c, 0, -fy);
                 return true;
             }
             // Squeezed between floor and ceiling: stop them moving into each other
+            squished(a, b, overlapY, !bStoppable && svy(b) * sy < 0);
             if (a.vy * sy > 0) a.vy = 0;
             if (b.vy * sy < 0) b.vy = 0;
             return true;
@@ -529,6 +690,7 @@ namespace CollisionHandler {
         }
         // A wall is in the way (e.g. a box landing on a player standing on the floor):
         // move the other one instead.
+        if (second === b && !bStoppable && svx(b) * sx < 0) squished(a, b, overlapX, true);
         if (canMoveTo(second, -fx, -fy, first, secondBlockers)) {
             moveBy(second, -fx, -fy);
             return true;
@@ -548,6 +710,8 @@ namespace CollisionHandler {
             moveBy(a, ox, oy);
         } else {
             // Stuck for now: at least stop them moving further into each other
+            squished(a, b, alongX ? overlapX : overlapY,
+                !bStoppable && (alongX ? svx(b) * sx < 0 : svy(b) * sy < 0));
             if (alongX) {
                 if (a.vx * sx > 0) a.vx = 0;
                 if (b.vx * sx < 0) b.vx = 0;
