@@ -271,6 +271,9 @@ namespace CollisionHandler {
         for (let i = 0; i < tracked.length; i++) {
             const s = tracked[i];
             if (!isAlive(s)) continue;
+            // Something collisions never move (a wall sprite, an elevator) doesn't
+            // stand on anything: it must not be carried or pulled down by what's under it.
+            if (!movable[i]) { s.data["__swon"] = null; continue; }
             const prev: Sprite = s.data["__swon"];
             let best: Sprite = null;
             let bestOverlap = 0;
@@ -632,7 +635,8 @@ namespace CollisionHandler {
 
         // Who moves? b can only be the one stopped if the rule lets it be
         // (player vs player, or a pushable box).
-        const bStoppable = rule.pushable || isIn(inA, r, b);
+        // ("can be pushed" off makes it immovable here too)
+        const bStoppable = (rule.pushable || isIn(inA, r, b)) && isMovable(b);
         let moveB = false;
         if (alongX) {
             // the one walking into the other stops; one standing still is never shoved
@@ -653,6 +657,9 @@ namespace CollisionHandler {
 
         const first = moveB ? b : a;
         const second = moveB ? a : b;
+        // Something that can't be stopped (an elevator, a wall sprite, a box with
+        // "can be pushed" off) is never moved out of the way: the other one gives.
+        const secondMovable = second === a || bStoppable;
         const fx = moveB ? -ax : ax;
         const fy = moveB ? -ay : ay;
 
@@ -669,7 +676,7 @@ namespace CollisionHandler {
             // stopped (an elevator going up into a ceiling), that's a squish
             if (second === b && !bStoppable && svy(b) * sy < 0) squished(a, b, overlapY, true);
             const chain2: Sprite[] = [];
-            if (collectLift(second, -fy, first, chain2, 0)) {
+            if (secondMovable && collectLift(second, -fy, first, chain2, 0)) {
                 for (const c of chain2) moveBy(c, 0, -fy);
                 return true;
             }
@@ -691,7 +698,7 @@ namespace CollisionHandler {
         // A wall is in the way (e.g. a box landing on a player standing on the floor):
         // move the other one instead.
         if (second === b && !bStoppable && svx(b) * sx < 0) squished(a, b, overlapX, true);
-        if (canMoveTo(second, -fx, -fy, first, secondBlockers)) {
+        if (secondMovable && canMoveTo(second, -fx, -fy, first, secondBlockers)) {
             moveBy(second, -fx, -fy);
             return true;
         }
