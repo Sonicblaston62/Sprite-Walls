@@ -86,6 +86,7 @@ namespace CollisionHandler {
             // ("on game update" = 20, update intervals = 19). So game code never sees
             // the in-between state, e.g. a sprite standing on another sprite always
             // has vy = 0, just like on the floor.
+            game.eventContext().registerFrameHandler(scene.PHYSICS_PRIORITY - 1, beforePhysics);
             game.eventContext().registerFrameHandler(scene.PHYSICS_PRIORITY + 1, step);
         }
     }
@@ -122,7 +123,37 @@ namespace CollisionHandler {
     let idxB: number[][] = [];
     let movable: boolean[] = [];
 
+    // A sprite standing on another sprite gets no gravity while the engine moves
+    // sprites. Otherwise gravity gives it a little downward speed every frame, and
+    // anything that looks at the speed before Sprite Walls runs (like Character
+    // Animations' "moving down") thinks it is falling. Floors made of tiles work
+    // the same way already: the engine stops the speed there itself.
+    function beforePhysics() {
+        if (!tracked) return;
+        for (const s of tracked) {
+            if (!isAlive(s) || s.ay <= 0 || s.vy < 0) continue;
+            const on: Sprite = s.data["__swon"];
+            // (not if what it stands on is going down: then it really is moving down,
+            // and gravity is what keeps it following)
+            if (!on || !isAlive(on) || on.vy > 0) continue;
+            s.data["__sway"] = s.ay;
+            s.ay = 0;
+        }
+    }
+
+    function restoreGravity() {
+        if (!tracked) return;
+        for (const s of tracked) {
+            const ay = s.data["__sway"];
+            if (ay !== undefined && ay !== null) {
+                if (s.ay == 0) s.ay = ay;   // unless the game changed it meanwhile
+                s.data["__sway"] = null;
+            }
+        }
+    }
+
     function step() {
+        restoreGravity();
         frameNo++;
         fired = [];
         if (!firedA) { firedA = []; firedB = []; }
